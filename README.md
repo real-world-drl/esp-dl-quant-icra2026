@@ -39,12 +39,31 @@ invoke it directly.
 
 ## Setup
 
+Use whichever Python environment manager you prefer — both work. The
+`pip install -e .` line is the part that actually matters; everything before
+it just creates an isolated env.
+
+**With venv** (built into Python, no extra install):
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 # or, for byte-stable reproduction of the bundled artefacts:
 pip install -r requirements.txt && pip install -e . --no-deps
 ```
+
+**With conda** (matches the upstream `sim-to-real-cpp` workflow):
+
+```bash
+conda create -n esp-dl-quant python=3.11 -y
+conda activate esp-dl-quant
+pip install -e .
+# or, for byte-stable reproduction of the bundled artefacts:
+pip install -r requirements.txt && pip install -e . --no-deps
+```
+
+`pip` inside a conda env is fine — none of the deps here need conda's
+binary channel. Don't stack a `venv` inside a conda env; pick one.
 
 PPQ ships with C extensions; on a fresh box you may need
 ``pip install --upgrade pip setuptools wheel`` first.
