@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drl-quant"
+version = "0.1.0"
+description = "Quantization toolchain for DRL actor networks targeting ESP-DL on ESP32-S3 / ESP32-P4."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+  { name = "Peter Bohm" },
+]
+keywords = ["reinforcement-learning", "quantization", "esp-dl", "onnx", "ppq", "embedded"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "torch",
+  "onnx",
+  "onnxruntime",
+  "ppq",
+  "paho-mqtt",
+]
+
+[project.optional-dependencies]
+dev = ["ruff"]
+
+[tool.setuptools.packages.find]
+include = ["drl_quant*"]

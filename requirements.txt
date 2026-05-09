@@ -1,0 +1,10 @@
+# Pinned at versions used to produce the bundled QuaidSIM-v4 artefacts.
+# torch / onnxruntime are sensitive: PPQ tracks specific torch versions, and
+# onnxruntime's quantize_dynamic semantics changed across 1.16+.
+numpy==1.26.4
+pandas==2.2.2
+torch==2.1.2
+onnx==1.16.1
+onnxruntime==1.18.1
+ppq==0.6.6
+paho-mqtt==1.6.1
