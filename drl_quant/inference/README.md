@@ -1,39 +1,135 @@
-# `drl_quant.inference` — host-side runtime (WORK IN PROGRESS)
+# `drl_quant.inference`
 
-Intended driver for running a flashed Quaid robot via MQTT: subscribe to the
-robot's observation/mocap topics, run the (host-side) ONNX actor, publish
-actions, and log everything to SQLite for later analysis.
+Evaluate a trained TD3 / SAC actor against the Quaid env (MQTT) and collect
+inference-time + reward statistics. Python port of
+``sim-to-real-cpp/src/inference/Player.cpp`` minus the on-device
+``MCUInference`` path (skipped intentionally — that runs on the ESP32).
 
-## Status
+## What's here
 
-Wired up:
-- MQTT client + topic subscriptions (`quaid/obs/r<q>BIN`, `quaid/mocap/r<q>BIN`,
-  `quaid/set/r<q>`)
-- SQLite logger with a `readme` table seeded from `--description` / `--title`
-- Packet `struct` placeholders for observation / mocap layouts
-
-Stubs (the part that still needs to be finished):
-- `parse_observations` — currently just unpacks the header; needs to decode
-  the full observation, run it through a loaded ONNX model, log to SQLite,
-  and publish the action back over MQTT.
-- `parse_mocap` / `parse_settings` — packet layouts not yet aligned with the
-  current Quaid telemetry format.
-- ONNX session initialization + the model-path CLI argument.
-
-## Run
-
-```bash
-python -m drl_quant.inference.mqtt_inference \
-    -e quad -q 100 --description "QuaidSIM-v4 RA-TD3 dynamic-quant" \
-    --title "smoke test" -ms <broker-host>
+```
+drl_quant/inference/
+├── runners.py          backends: TracedRunner, OnnxRunner, OnnxWithRnnRunner
+├── preprocessors.py    NoPreprocessor, AddActions, Gru, OnnxGru
+├── stats.py            InferenceStats — per-step μs + per-episode reward + sqlite
+├── player.py           orchestrator + filename-based auto-dispatch
+└── __main__.py         CLI: python -m drl_quant.inference
 ```
 
-The MQTT broker host defaults to `mqtt-server`; override with `-ms`.
+## Supported model formats
 
-## Why is this here?
+| File pattern                         | Backend              | Notes                                                                 |
+|--------------------------------------|----------------------|-----------------------------------------------------------------------|
+| ``*.pt`` / ``*.dat``                 | ``TracedRunner``     | TorchScript (the C++ training repo writes ``.dat``; same format).      |
+| ``act_net_*.onnx``                   | ``OnnxRunner``        | Single-input ONNX. For non-recurrent TD3 / SAC.                       |
+| ``aug_act_net_*.onnx``               | ``OnnxWithRnnRunner`` | Aug-GRU baked in. Two inputs (obs + h_t), two outputs (action + h_t). |
+| ``with_gru_act_net_*.onnx``          | ``OnnxWithRnnRunner`` | Native ``nn.GRU`` baked in. Same I/O shape as Aug.                    |
+| ``*_qd.onnx`` (dynamic-quant)        | same as the source    | onnxruntime int8; otherwise identical.                                |
 
-The on-device inference happens on the ESP32-S3 / ESP32-P4 itself (paper's
-main repo). This module is for *host-side* experiments: comparing the
-dynamic-quant ONNX (`models/.../onnx-quant/*_qd.onnx`) against the on-device
-ESP-DL output, replaying logs, and instrumenting runs without touching MCU
-firmware.
+## Auto-dispatch — what fires when
+
+The Player inspects the model filename and picks a (runner, preprocessor)
+pair. The C++ Player uses the same heuristics; we mirror them so you can
+swap runtimes 1:1.
+
+```
+                                       ┌─ Aug-GRU / native GRU baked into ONNX ────┐
+              ┌─ ONNX ─────────────────│                                            │
+              │                        └─ no GRU inside (act_net_*.onnx) ──────────┤
+─ filename ───┤                                                                    │
+              └─ TorchScript (.pt / .dat) ─ actor head only; recurrence external ──┘
+```
+
+```
+            ┌── R-  (recurrent, no prev action) ────────────────────────────┐
+            │                                                                │
+─ tag in ───┼── RA- (recurrent + previous action) ─────────────────────────┐ │
+  filename  │                                                              │ │
+            └── plain TD3 / SAC (non-recurrent) ─────────────────────────┐ │ │
+                                                                         ▼ ▼ ▼
+```
+
+Results in:
+
+| Filename example                                        | Runner               | Preprocessor              |
+|---------------------------------------------------------|----------------------|---------------------------|
+| ``act_net_*_TD3_*.onnx``                                | OnnxRunner           | NoPreprocessor            |
+| ``act_net_*_SAC_*.dat``                                 | TracedRunner         | NoPreprocessor            |
+| ``aug_act_net_*_R-TD3_*.onnx``                          | OnnxWithRnnRunner    | NoPreprocessor            |
+| ``aug_act_net_*_RA-SAC_*.onnx``                         | OnnxWithRnnRunner    | AddActionsPreprocessor    |
+| ``with_gru_act_net_*_RA-TD3_*.onnx``                    | OnnxWithRnnRunner    | AddActionsPreprocessor    |
+| ``act_net_*_R-TD3_*.dat`` + ``rnn_*.dat``                | TracedRunner         | GruPreprocessor           |
+| ``act_net_*_RA-SAC_*.dat`` + ``rnn_*.dat``               | TracedRunner         | GruPreprocessor (actions) |
+| ``act_net_*_R-TD3_*.onnx`` + ``rnn_*.onnx``              | OnnxRunner           | OnnxGruPreprocessor       |
+
+Override either choice via ``--runner`` / ``--preprocessor``.
+
+## CLI
+
+```bash
+python -m drl_quant.inference \
+    --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \
+    --env-config quaid_env/examples/quaid-icra-sim.yaml \
+    --episodes 5 \
+    --output-dir runs/eval-aug-ra-td3
+```
+
+Recurrent TorchScript with an external GRU:
+
+```bash
+python -m drl_quant.inference \
+    --model models/QuaidSIM-v4/cpp/act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.dat \
+    --gru-path models/rnn/rnn_Quaid_RA-64.dat \
+    --env-config quaid_env/examples/quaid-icra-sim.yaml
+```
+
+## Programmatic use
+
+```python
+from quaid_env import QuaidEnv, load_settings
+from drl_quant.inference import Player
+
+env = QuaidEnv(load_settings('quaid_env/examples/quaid-icra-sim.yaml'))
+env.connect()
+
+player = Player(
+    env,
+    'models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx',
+    test_episodes=5,
+    output_dir='runs/eval-1',
+)
+stats = player.play()
+stats.print_summary()
+player.close()
+env.close()
+
+print(stats.summary()['mean_inference_us'])
+```
+
+## Statistics
+
+Per episode:
+- reward, step count, wall seconds, FPS
+- mean / stdev inference time (microseconds)
+
+Aggregate:
+- mean ± stdev reward, mean steps
+- inference: mean / stdev / min / max / p50 / p95 / p99 (μs)
+
+If ``--output-dir`` is set, the run also writes
+``<output-dir>/inference_times.db`` with two SQLite tables matching the C++
+``Trainer::log_inference_times`` schema:
+
+```sql
+CREATE TABLE inference_times (id PK, episode_no, step, inference_time_us);
+CREATE TABLE episodes        (id PK, episode_no, reward, steps, wall_seconds);
+```
+
+## What's intentionally skipped
+
+- ``MCUInference`` — that path runs on the ESP32 itself (the paper's main
+  repo). Host-side Python doesn't need it.
+- ``FrameStackingPreprocessor`` — the QuaidSIM-v4 policies don't use it; can
+  be added later by mirroring `FrameStackingPreprocessor.cpp`.
+- The C++ Player's ``params->rnn_a_model`` fallback for missing-snapshot
+  GRUs — pass ``--gru-path`` explicitly instead.

@@ -28,7 +28,7 @@ drl_quant/                     Python package
     onnx_export/               step 2: TorchScript -> ONNX (3 variants)
     onnx_dynamic_quantize/     step 3: ONNX -> dynamic-quantized ONNX
     espdl_quantize/            step 4: ONNX -> ESP-DL .espdl
-    inference/                 host-side MQTT inference loop (WIP)
+    inference/                 evaluation Player + runners + preprocessors
 quaid_env/                     standalone gymnasium env (own pyproject.toml,
                                separate install — see quaid_env/README.md)
 scripts/                       end-to-end runner
@@ -140,12 +140,23 @@ The script is non-destructive — re-running it overwrites `models/QuaidSIM-v4/o
 `onnx-quant/`, and `esp-dl/` with freshly generated copies of the bundled
 artefacts.
 
-### Inference (work in progress)
+### Evaluation / inference
 
-`drl_quant.inference.mqtt_inference` is a host-side loop intended to drive the
-robot through MQTT once the quantized actor is flashed. The MQTT plumbing and
-SQLite logging are wired up; the observation-decode and action-publish hooks
-are still stubs. See `drl_quant/inference/README.md` for status.
+`drl_quant.inference` runs a quantized actor against the QuaidEnv (over
+MQTT) and records inference-time + reward statistics. The runner +
+observation-preprocessor are auto-detected from the model filename (TD3 /
+SAC / R-/RA-/A- variants, TorchScript or ONNX, Aug-GRU baked in or external).
+
+```bash
+pip install -e quaid_env/
+python -m drl_quant.inference \
+    --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \
+    --env-config quaid_env/examples/quaid-icra-sim.yaml \
+    --episodes 5 --output-dir runs/eval-1
+```
+
+See `drl_quant/inference/README.md` for the full dispatch table and the
+list of supported model formats.
 
 ## Naming conventions (load-bearing)
 
