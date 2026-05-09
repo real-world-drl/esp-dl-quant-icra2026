@@ -49,6 +49,33 @@ pip install -r requirements.txt && pip install -e . --no-deps
 PPQ ships with C extensions; on a fresh box you may need
 ``pip install --upgrade pip setuptools wheel`` first.
 
+### GPU (optional)
+
+`pip install torch` from the default PyPI index installs the **CPU-only**
+build on Linux. The pipeline runs end-to-end on CPU — quantization, ONNX
+export, and inference are all CPU-bound by the on-device target — so a GPU
+is not required.
+
+If you do want CUDA / ROCm / MPS, install the matching torch build *before*
+running ``pip install -e .``, and let pip skip the existing wheel:
+
+```bash
+# Pick the index URL for your platform from https://pytorch.org/get-started/locally/
+# Example: CUDA 12.1
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install -e .
+```
+
+For ONNX inference on GPU, also swap the runtime:
+
+```bash
+pip uninstall onnxruntime
+pip install onnxruntime-gpu
+```
+
+The `Player` and `TracedRunner` honour ``--device cuda`` when the matching
+torch + onnxruntime-gpu wheels are installed.
+
 ## End-to-end pipeline
 
 The four steps below mirror what `scripts/run_quaidsim_v4.sh` does. Every
