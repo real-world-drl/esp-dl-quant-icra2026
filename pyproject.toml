@@ -25,6 +25,10 @@ dependencies = [
   "torch",
   "onnx",
   "onnxruntime",
+  # torch >= 2.5 imports onnxscript even when calling the legacy
+  # torch.onnx.export(...) interface that our exporters use, so this is
+  # a hard dep rather than an optional one.
+  "onnxscript",
   "ppq",
   "paho-mqtt",
 ]
