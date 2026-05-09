@@ -27,6 +27,7 @@ import torch
 from drl_quant.networks.rnn import GruNet
 from drl_quant.networks.sac import DiagGaussianActor, RSACActor
 from drl_quant.networks.td3 import RTD3Actor, TD3Actor
+from drl_quant.onnx_export._naming import detect_algorithm
 
 
 def get_args():
@@ -78,7 +79,8 @@ def export(args):
         'rnn_layers': args.num_layers,
     }
 
-    if 'TD3' in input_model_path:
+    algo = detect_algorithm(input_model_path)
+    if algo == 'TD3':
         native_actor = TD3Actor(input_size_with_gru, args.action_size, params)
     else:
         native_actor = DiagGaussianActor(input_size_with_gru, args.action_size, params)
@@ -91,7 +93,7 @@ def export(args):
     py_gru.load_state_dict(scripted_gru.state_dict())
     py_gru.eval()
 
-    if 'TD3' in input_model_path:
+    if algo == 'TD3':
         py_model = RTD3Actor(input_size, args.action_size, params)
         py_model.td3_actor_net = native_actor.td3_actor_net
     else:

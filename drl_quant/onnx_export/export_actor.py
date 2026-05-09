@@ -23,6 +23,7 @@ import torch
 
 from drl_quant.networks.sac import DiagGaussianActor
 from drl_quant.networks.td3 import TD3Actor
+from drl_quant.onnx_export._naming import detect_algorithm
 
 
 def get_args():
@@ -50,7 +51,7 @@ def export(args):
 
     params = {'hidden_size': 256, 'hidden_size2': 256, 'orthogonal_init': False}
 
-    if 'TD3' in input_model_path:
+    if detect_algorithm(input_model_path) == 'TD3':
         py_model = TD3Actor(args.observation_size, args.action_size, params)
     else:
         py_model = DiagGaussianActor(args.observation_size, args.action_size, params)

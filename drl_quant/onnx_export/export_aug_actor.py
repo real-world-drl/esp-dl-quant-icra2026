@@ -33,6 +33,7 @@ from drl_quant.networks.augmented_gru import GRUAug
 from drl_quant.networks.rnn import GruNet
 from drl_quant.networks.sac import AugRSACActor, DiagGaussianActor
 from drl_quant.networks.td3 import AugRTD3Actor, TD3Actor
+from drl_quant.onnx_export._naming import detect_algorithm
 
 
 def get_args():
@@ -84,7 +85,8 @@ def export(args):
         'rnn_layers': args.num_layers,
     }
 
-    if 'TD3' in input_model_path:
+    algo = detect_algorithm(input_model_path)
+    if algo == 'TD3':
         native_actor = TD3Actor(input_size_with_gru, args.action_size, params)
     else:
         native_actor = DiagGaussianActor(input_size_with_gru, args.action_size, params)
@@ -106,7 +108,7 @@ def export(args):
     gru_aug.l2.x2h.weight = native_gru.rl_gru.weight_ih_l2
     gru_aug.l2.h2h.weight = native_gru.rl_gru.weight_hh_l2
 
-    if 'TD3' in input_model_path:
+    if algo == 'TD3':
         aug_actor = AugRTD3Actor(input_size, args.action_size, params)
         aug_actor.td3_actor_net = native_actor.td3_actor_net
     else:
