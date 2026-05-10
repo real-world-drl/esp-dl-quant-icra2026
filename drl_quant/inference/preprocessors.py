@@ -153,7 +153,13 @@ class GruPreprocessor(Preprocessor):
                 if prev_action is None or len(prev_action) == 0:
                     prev_action = np.zeros(self.action_dim, dtype=np.float32)
                 act_t = torch.from_numpy(np.asarray(prev_action, dtype=np.float32)).to(self.device)
-                rnn_input = torch.cat([obs_t, act_t]).unsqueeze(0).unsqueeze(0)
+                # ORDER IS LOAD-BEARING: action first, then observation —
+                # matches C++ GruPreprocessor.cpp:39-44 which is what the
+                # trained policies were exposed to. Reversing the order
+                # silently produces a working network that outputs near-
+                # zero actions because the actor head's first Linear
+                # weights are learned against this exact input layout.
+                rnn_input = torch.cat([act_t, obs_t]).unsqueeze(0).unsqueeze(0)
             else:
                 rnn_input = obs_t.unsqueeze(0).unsqueeze(0)
 
@@ -209,11 +215,17 @@ class OnnxGruPreprocessor(Preprocessor):
         self._h_t = self._zero_h()
 
     def process(self, observation: np.ndarray, prev_action: np.ndarray) -> np.ndarray:
-        rnn_input = np.asarray(observation, dtype=np.float32)
+        obs = np.asarray(observation, dtype=np.float32)
         if self.actions_to_rnn:
             if prev_action is None or len(prev_action) == 0:
                 prev_action = np.zeros(self.action_dim, dtype=np.float32)
-            rnn_input = np.concatenate([rnn_input, np.asarray(prev_action, dtype=np.float32)])
+            # ORDER IS LOAD-BEARING: action first, then observation —
+            # matches C++ GruPreprocessor.cpp:39-44 (and AddActions). The
+            # trained actor head's first Linear weights expect this exact
+            # layout; reversing it produces near-zero actions.
+            rnn_input = np.concatenate([np.asarray(prev_action, dtype=np.float32), obs])
+        else:
+            rnn_input = obs
 
         features, self._h_t = self._session.run(
             [self._features_output, self._ht_output],
