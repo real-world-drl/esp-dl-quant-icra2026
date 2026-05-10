@@ -269,6 +269,34 @@ Several scripts branch on substrings in the input filename:
 Keep these in any new filenames or step 4 will pick the wrong fixture from
 `drl_quant/constants.py`.
 
+## Citation
+
+If you use this code in academic work, please cite:
+
+> P. Böhm, A. C. Chapman, P. Moghadam, P. Pounds, and J. J. Chung,
+> *"Quantization of DRL Models for Embedded Microcontrollers"*,
+> in **2026 IEEE International Conference on Robotics and Automation
+> (ICRA)**, Vienna, Austria, June 2026.
+> [https://2026.ieee-icra.org/](https://2026.ieee-icra.org/)
+
+> ⚠ The BibTeX below is provisional — the paper appears at ICRA 2026
+> (1-5 June, Vienna) and the entry will be updated with the DOI, page
+> numbers, and final proceedings volume after publication.
+
+```bibtex
+@inproceedings{bohm2026quantization,
+  author    = {B{\"o}hm, Peter and Chapman, Archie C. and Moghadam, Peyman and Pounds, Pauline and Chung, Jen Jen},
+  title     = {Quantization of {DRL} Models for Embedded Microcontrollers},
+  booktitle = {2026 IEEE International Conference on Robotics and Automation (ICRA)},
+  year      = {2026},
+  month     = jun,
+  address   = {Vienna, Austria},
+  publisher = {IEEE},
+  url       = {https://2026.ieee-icra.org/},
+  note      = {To appear. DOI and pages will be added post-publication.}
+}
+```
+
 ## License
 
 MIT — see `LICENSE`.
