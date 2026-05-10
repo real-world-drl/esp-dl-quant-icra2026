@@ -1,10 +1,17 @@
 # Pinned at versions used to produce the bundled QuaidSIM-v4 artefacts.
 # torch / onnxruntime are sensitive: PPQ tracks specific torch versions, and
 # onnxruntime's quantize_dynamic semantics changed across 1.16+.
+# protobuf < 4 is mandatory for PPQ — its compiled extensions use the
+# older C++ ABI and raise "TypeError: Descriptors cannot be created
+# directly" against protobuf 4.x. 3.20.3 is the last 3.x release.
 numpy==1.26.4
 pandas==2.2.2
 torch==2.1.2
 onnx==1.16.1
 onnxruntime==1.18.1
-ppq==0.6.6
+# esp-ppq is Espressif's PPQ fork — owns the espdl_quantize_onnx /
+# espdl_quantize_torch entry points the original ``ppq.api`` no longer
+# exposes. esp-ppq pulls a compatible ``ppq`` core as a transitive dep.
+esp-ppq==1.2.10
+protobuf==3.20.3
 paho-mqtt==1.6.1

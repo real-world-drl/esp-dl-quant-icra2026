@@ -54,3 +54,72 @@ This *must* match the ONNX input shape.
 Don't — the native-GRU op trips up ESP-DL's importer. Use
 `drl_quant.onnx_export.export_aug_actor` instead and quantize the resulting
 `aug_act_net_*` ONNX.
+
+## `IndexError: Dimension out of range` in graphwise analysis (recurrent only)
+
+After quantization completes (you'll see *"Network Quantization Finished."*)
+the analyser may crash with::
+
+    IndexError: Dimension out of range (expected to be in range of [-1, 0], but got 1)
+    ... at Op Execution Error: /td3_actor_net/td3_actor_net.0/MatMul
+
+The recurrent actors (`AugRTD3Actor` / `AugRSACActor` and the native-GRU
+counterparts) collapse the batch dim in their `forward`:
+
+```python
+full_input = torch.cat((rnn_input.squeeze(0).squeeze(0), out.squeeze(0).squeeze(0)))
+```
+
+so every Linear in the actor head operates on rank-1 tensors. The new
+`esp-ppq`'s `graphwise_error_analyse` calls `tensor.flatten(start_dim=1)`
+on every intermediate output, which needs rank ≥ 2. The old `ppq` was
+tolerant; the fork is stricter.
+
+`quantize_recurrent.py` defaults `error_report=False` so the analysis is
+skipped — **the `.espdl` artefact is bit-identical** either way; you only
+lose the per-layer noise diagnostic. Pass `--error-report` to opt back in
+once you've refactored the actor to keep the batch dim throughout (e.g.
+`torch.cat((rnn_input, out), dim=-1)` and `[..., :action_dim]` indexing in
+the SAC head). That refactor changes the ONNX action shape from `(8,)` to
+`(1, 8)` so it needs on-device verification before committing.
+
+## `ImportError: cannot import name 'espdl_quantize_onnx' from 'ppq.api'`
+
+Upstream PPQ no longer exposes the ESP-DL entry points. Espressif forked
+the project as **esp-ppq**, and the ``espdl_quantize_onnx`` /
+``espdl_quantize_torch`` functions now live in ``esp_ppq.api``. Our
+quantize scripts already import from the fork; if you set up your env
+before this change, install esp-ppq:
+
+```bash
+pip install esp-ppq
+```
+
+The function signature is unchanged from the original ``ppq.api`` version
+so no script edits are needed.
+
+## protobuf 4.x error
+
+If `espdl_quantize_onnx(...)` raises:
+
+```
+TypeError: Descriptors cannot be created directly.
+If this call came from a _pb2.py file, your generated code is out of date
+and must be regenerated with protoc >= 3.19.0.
+```
+
+PPQ's compiled extensions use the older protobuf C++ ABI and break
+against protobuf 4.x. `pyproject.toml` and `requirements.txt` both pin
+`protobuf<4.0` (specifically `protobuf==3.20.3`) so a fresh install
+avoids it; if you're seeing this in an existing env, force the
+downgrade:
+
+```bash
+pip install 'protobuf<4'
+```
+
+`onnx 1.16` and `onnxruntime` both work fine on protobuf 3.20.3.
+
+The other workaround the error suggests
+(`PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`) makes parsing 10-100x
+slower and isn't worth it for our model sizes — just downgrade.

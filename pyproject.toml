@@ -29,7 +29,16 @@ dependencies = [
   # torch.onnx.export(...) interface that our exporters use, so this is
   # a hard dep rather than an optional one.
   "onnxscript",
-  "ppq",
+  # Espressif's PPQ fork — the original ``ppq.api.espdl_quantize_onnx``
+  # was removed upstream and the ``espdl_*`` entry points now live in
+  # esp-ppq. Our quantize_actor / quantize_recurrent import from
+  # ``esp_ppq.api``. Pulling esp-ppq also pulls a compatible PPQ core.
+  "esp-ppq",
+  # PPQ's compiled extensions reference the older protobuf C++ ABI; pip
+  # otherwise installs protobuf 4.x which raises at espdl_quantize_onnx
+  # time with "TypeError: Descriptors cannot be created directly".
+  # 3.20.x is the last 3.x release and what PPQ tests against.
+  "protobuf<4.0",
   "paho-mqtt",
 ]
 

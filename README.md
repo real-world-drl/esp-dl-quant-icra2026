@@ -77,6 +77,23 @@ TorchScript path via ``dynamo=False`` and need ``onnxscript`` even though
 they don't use the dynamo path themselves. Both fixes are already in
 ``pyproject.toml`` for fresh installs.
 
+If the **espdl quantization** step fails with
+``ImportError: cannot import name 'espdl_quantize_onnx' from 'ppq.api'``,
+upstream PPQ removed the ESP-DL entry points — install Espressif's fork
+``esp-ppq`` (already pinned in ``pyproject.toml`` / ``requirements.txt``):
+
+```bash
+pip install esp-ppq
+```
+
+If the same step fails with
+``TypeError: Descriptors cannot be created directly``, your env has
+protobuf 4.x and PPQ needs 3.x. Fresh installs avoid this (we pin
+``protobuf<4.0`` in ``pyproject.toml`` and ``protobuf==3.20.3`` in
+``requirements.txt``); on an existing env force the downgrade with
+``pip install 'protobuf<4'``. See ``drl_quant/espdl_quantize/README.md``
+for the longer note on both errors.
+
 ### GPU (optional)
 
 `pip install torch` from the default PyPI index installs the **CPU-only**

@@ -21,9 +21,13 @@ Run as::
 import argparse
 
 import torch
-import ppq.lib as PFL
-from ppq import TargetPlatform, QuantizationSettingFactory
-from ppq.api import espdl_quantize_onnx
+# Espressif forked PPQ into ``esp_ppq`` and moved the ``espdl_*`` entry
+# points there. The upstream ``ppq.api.espdl_quantize_onnx`` was removed;
+# install ``esp-ppq`` (pulled by our pyproject.toml) and import from the
+# fork instead. The function signature is unchanged from the old API.
+import esp_ppq.lib as PFL
+from esp_ppq import TargetPlatform, QuantizationSettingFactory
+from esp_ppq.api import espdl_quantize_onnx
 from torch.utils.data import DataLoader
 
 from drl_quant.constants import (
@@ -47,6 +51,14 @@ def get_args():
     parser.add_argument('-t', '--target', default='esp32s3', help='esp32s3 or esp32p4.')
     parser.add_argument('-nb', '--num_of_bits', default=8, type=int)
     parser.add_argument('-o', '--output_model', help='Override the output .espdl path.')
+    parser.add_argument(
+        '--error-report', action='store_true',
+        help='Enable post-quantization graphwise + layerwise error analysis. Off '
+             'by default for recurrent actors because the Aug*Actor.forward path '
+             'collapses the batch dim (rank-1 intermediate tensors), which trips '
+             "esp-ppq's analyser. The .espdl export is bit-identical with or "
+             'without the report.',
+    )
     return parser.parse_args()
 
 
@@ -65,7 +77,12 @@ def main():
     onnx_path = args.input_model
     espdl_path = args.output_model or onnx_path.replace('.onnx', '.espdl').replace('onnx', 'esp-dl')
 
-    dataset = torch.load(args.calib_dataset)
+    # weights_only=False: the calibration .pt is a TensorDataset pickle
+    # produced by drl_quant.data_generation.generate_calibration; the new
+    # torch >= 2.6 default (weights_only=True) refuses to unpickle anything
+    # that isn't a tensor / state_dict. We generate this file ourselves so
+    # there's no untrusted-input risk.
+    dataset = torch.load(args.calib_dataset, weights_only=False)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
     if args.hidden_size == 64:
@@ -92,7 +109,10 @@ def main():
         collate_fn=collate_fn,
         dispatching_override=None,
         device=DEVICE,
-        error_report=True,
+        # Off by default for recurrent actors — see the --error-report flag
+        # in get_args() for the full reason. The .espdl is bit-identical
+        # either way; only the per-layer noise diagnostic is gated.
+        error_report=args.error_report,
         skip_export=False,
         export_test_values=True,
         setting=setting,

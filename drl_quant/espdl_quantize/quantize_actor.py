@@ -20,9 +20,13 @@ Run as::
 import argparse
 
 import torch
-import ppq.lib as PFL
-from ppq import TargetPlatform
-from ppq.api import espdl_quantize_onnx
+# Espressif forked PPQ into ``esp_ppq`` and moved the ``espdl_*`` entry
+# points there. The upstream ``ppq.api.espdl_quantize_onnx`` was removed;
+# install ``esp-ppq`` (pulled by our pyproject.toml) and import from the
+# fork instead. The function signature is unchanged from the old API.
+import esp_ppq.lib as PFL
+from esp_ppq import TargetPlatform
+from esp_ppq.api import espdl_quantize_onnx
 from torch.utils.data import DataLoader
 
 from drl_quant.constants import test_observations
@@ -56,7 +60,12 @@ def main():
     onnx_path = args.input_model
     espdl_path = args.output_model or onnx_path.replace('.onnx', '.espdl').replace('onnx', 'esp-dl')
 
-    dataset = torch.load(args.calib_dataset)
+    # weights_only=False: the calibration .pt is a TensorDataset pickle
+    # produced by drl_quant.data_generation.generate_calibration; the new
+    # torch >= 2.6 default (weights_only=True) refuses to unpickle anything
+    # that isn't a tensor / state_dict. We generate this file ourselves so
+    # there's no untrusted-input risk.
+    dataset = torch.load(args.calib_dataset, weights_only=False)
     dataloader = DataLoader(dataset, batch_size=1000, shuffle=False)
 
     dummy_input = [torch.from_numpy(test_observations).to(DEVICE)]
