@@ -10,10 +10,12 @@ import torch.nn as nn
 
 
 class GruNet(nn.Module):
-    """A 3-layer `nn.GRU` (no bias) that takes (x, h_t) and returns (out, h_t).
+    """An ``nn.GRU`` wrapper that takes ``(x, h_t)`` and returns ``(out, h_t)``.
 
-    `out` is squeezed to a 1-D feature vector for direct concat with the
-    observation by the actor head.
+    ``out`` is squeezed to a 1-D feature vector for direct concat with the
+    observation by the actor head. Defaults match the C++ training repo
+    (3 layers, ``bias=False``); pass ``params={'bias': True}`` to support
+    Python-trained GRUs that use the ``nn.GRU`` default of ``bias=True``.
     """
 
     def __init__(self, obs_size, params):
@@ -26,7 +28,7 @@ class GruNet(nn.Module):
             input_size=obs_size,
             num_layers=params['rnn_layers'],
             batch_first=True,
-            bias=False,
+            bias=params.get('bias', False),
         )
 
     def forward(self, x, h_t):

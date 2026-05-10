@@ -85,15 +85,36 @@ def main():
     dataset = torch.load(args.calib_dataset, weights_only=False)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    if args.hidden_size == 64:
-        h_t_in = test_h_t_in_64
-    elif args.hidden_size == 10:
-        h_t_in = test_h_t_in_10
+    # Dummy input is used for graph tracing — shape matters, values don't.
+    # We take the first sample from the calibration dataset, which is
+    # guaranteed to have the right rank / dim regardless of whether this
+    # is a Quaid actor (state_dim 17/25, hidden 64) or a user GRU with
+    # arbitrary dims. For byte-stable repro of the bundled QuaidSIM-v4
+    # artefacts the deterministic fixtures from drl_quant.constants are
+    # still used as a fallback when the dataset format doesn't yield a
+    # 2-tuple of (obs, h_t).
+    sample = dataset[0]
+    if isinstance(sample, (list, tuple)) and len(sample) >= 2:
+        dummy_input = [sample[0].to(DEVICE), sample[1].to(DEVICE)]
     else:
-        raise ValueError(f'No fixed h_t_in for hidden_size={args.hidden_size}; add one to drl_quant.constants.')
-
-    dummy_obs = test_observations_with_actions if 'RA-' in onnx_path else test_observations
-    dummy_input = [torch.from_numpy(dummy_obs).to(DEVICE), torch.from_numpy(h_t_in).to(DEVICE)]
+        # Older / non-Quaid datasets where each sample is a single tensor —
+        # caller probably means to feed the obs only, but we need an h_t
+        # too. Fall back to the Quaid fixtures for the legacy path.
+        if args.hidden_size == 64:
+            h_t_in = test_h_t_in_64
+        elif args.hidden_size == 10:
+            h_t_in = test_h_t_in_10
+        else:
+            raise ValueError(
+                f'Calibration dataset entries are bare tensors, no h_t_in available, '
+                f'and no fixture exists for hidden_size={args.hidden_size}. Either '
+                'use a (obs, h_t, ...)-shaped TensorDataset (see '
+                'drl_quant.data_generation.generate_calibration) or add an h_t fixture '
+                'to drl_quant.constants.'
+            )
+        dummy_obs = test_observations_with_actions if 'RA-' in onnx_path else test_observations
+        dummy_input = [torch.from_numpy(dummy_obs).to(DEVICE),
+                       torch.from_numpy(h_t_in).to(DEVICE)]
 
     setting = QuantizationSettingFactory.espdl_setting()
 

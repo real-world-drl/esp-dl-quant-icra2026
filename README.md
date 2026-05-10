@@ -12,6 +12,12 @@ The shipped pipeline targets the **QuaidSIM-v4** environment and includes the
 six trained TorchScript actors (TD3, SAC, RA-TD3, RA-SAC) plus the calibration
 observations needed to reproduce every step end-to-end.
 
+> **Just want to quantize a Python-trained `nn.GRU` for ESP-DL?**
+> See **[GRU_QUICKSTART.md](GRU_QUICKSTART.md)** — a 5-step walkthrough
+> that skips the DRL-specific bits. Useful for language-model and
+> sequence-encoder workflows where ESP-DL's standard ONNX `GRU` op
+> doesn't import cleanly.
+
 ## Repository layout
 
 ```
