@@ -4,7 +4,10 @@ ports:
   port: /dev/ttyUSB0
   #  mqtt_server_ip: "tcp://192.168.15.127:1883"
   mqtt_server_ip: "tcp://mqtt-server:1883"
-  mqtt_queue_no: 888
+  # Queue convention: real robot defaults to 99; sims use 100+; training
+  # jobs use distinct ranges to avoid cross-talk on the broker. Override at
+  # the CLI with `-q <n>` rather than editing this file per-run.
+  mqtt_queue_no: 99
 robot:
   sim: 0
   max_steps: 500

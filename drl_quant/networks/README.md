@@ -37,6 +37,23 @@ that quantize cleanly but output garbage on-device**:
    This matches PyTorch's `nn.GRU` and is the OPPOSITE of Keras. Weights
    copied from a trained `nn.GRU` will silently produce wrong outputs if
    this order is changed.
+4. **Cascade through current-step outputs, not previous-step hidden
+   states.** Layer N+1's input must be `hidden_N` (the current layer-N
+   output), not `chunks[N]` (the previous timestep's layer-N hidden state).
+   `nn.GRU` does the former; if `GRUAug` does the latter, transplanted
+   weights produce diverging outputs that the trained policy was never
+   exposed to. There is an equivalence test at
+   `drl_quant/networks/tests/test_augmented_gru.py` that locks this in
+   for layer counts 1, 2 and 3 — keep it green.
+
+## Layer counts
+
+`GRUAug` supports 1, 2, or 3 layers (`layers=` constructor arg). The cap is
+structural: each layer is a named `Module` (`self.l0` / `self.l1` /
+`self.l2`) so the ONNX trace gets a fixed graph instead of a Python loop.
+1 covers most language-model / sequence-encoder use cases; 2-3 cover the
+trained QuaidSIM-v4 policies. If you genuinely need more, add `self.l3`
+etc. and extend `forward()`.
 
 ## Direct use
 

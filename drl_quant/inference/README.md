@@ -67,11 +67,37 @@ Override either choice via ``--runner`` / ``--preprocessor``.
 ## CLI
 
 ```bash
+# Sim eval — uses queue 100 from quaid-icra-sim.yaml
 python -m drl_quant.inference \
     --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \
-    --env-config quaid_env/examples/quaid-icra-sim.yaml \
+    --env-config quaid-env/examples/quaid-icra-sim.yaml \
     --episodes 5 \
     --output-dir runs/eval-aug-ra-td3
+```
+
+### MQTT queue selection (`-q`)
+
+Real robot and simulator must be on **different MQTT queues** so an eval
+run can't accidentally drive the live robot. The bundled YAMLs follow the
+project convention:
+
+| Config                 | Default queue | Use                              |
+|------------------------|---------------|----------------------------------|
+| `quaid-icra-real.yaml` | `99`          | The real robot                    |
+| `quaid-icra-sim.yaml`  | `100`         | A simulator instance              |
+| (training)             | distinct band | Multiple parallel jobs use disjoint ranges to avoid cross-talk |
+
+Override per-run with `-q` (matches the C++ player) instead of editing the
+YAML:
+
+```bash
+# Run against a second simulator instance on queue 101
+python -m drl_quant.inference \
+    --model ... --env-config quaid-env/examples/quaid-icra-sim.yaml -q 101
+
+# Eval against the real robot
+python -m drl_quant.inference \
+    --model ... --env-config quaid-env/examples/quaid-icra-real.yaml -q 99
 ```
 
 Recurrent TorchScript with an external GRU:
@@ -80,7 +106,7 @@ Recurrent TorchScript with an external GRU:
 python -m drl_quant.inference \
     --model models/QuaidSIM-v4/cpp/act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.dat \
     --gru-path models/rnn/rnn_Quaid_RA-64.dat \
-    --env-config quaid_env/examples/quaid-icra-sim.yaml
+    --env-config quaid-env/examples/quaid-icra-sim.yaml
 ```
 
 ## Programmatic use
@@ -89,7 +115,7 @@ python -m drl_quant.inference \
 from quaid_env import QuaidEnv, load_settings
 from drl_quant.inference import Player
 
-env = QuaidEnv(load_settings('quaid_env/examples/quaid-icra-sim.yaml'))
+env = QuaidEnv(load_settings('quaid-env/examples/quaid-icra-sim.yaml'))
 env.connect()
 
 player = Player(

@@ -113,6 +113,19 @@ comma. The MCU's parser depends on that final `0`.
 | publish    | `quaid/act/r{q}`       | text — actions + single-char commands (`s`/`r`/`e`/`x`/`y`/`z`/`u`/`i`/`f`/`o`/`n`/`c`) |
 | publish    | `quaid/set/r{q}`       | text — used together with ctrl for "message" broadcasts |
 
+### Queue convention
+
+| Queue range  | Use case                                                 |
+|--------------|----------------------------------------------------------|
+| `99`         | Real robot. Default in `quaid-icra-real.yaml`.            |
+| `100+`       | Simulator instances (one queue per sim). Default in `quaid-icra-sim.yaml`. |
+| disjoint ranges | Training jobs — pick a band that doesn't overlap real / sim eval queues so the broker doesn't cross-deliver. |
+
+Keep real and sim on separate queues so an evaluation MQTT message never
+reaches the live robot. The downstream inference CLI exposes `-q` /
+`--mqtt-queue` so you can override the YAML value per-run instead of
+editing the file.
+
 ## Configuration
 
 The YAML format matches the C++ config (`%YAML:1.0` directive, then four

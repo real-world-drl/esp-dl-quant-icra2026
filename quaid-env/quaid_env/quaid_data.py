@@ -47,9 +47,12 @@ class QuaidData:
     gyro_y: float = 0.0
     gyro_z: float = 0.0
 
-    # Mocap-derived fields. positionX / Y / Z are in metres; the controller
-    # converts the int16 mm values from the mocap packet to metres before
-    # writing here, scaled by the sim/real factor.
+    # Mocap-derived fields. The unit is **decimetres** (0.1 m), matching the
+    # raw int16 the simulator publishes (MuJoCo metres * 10). The reward
+    # YAML's ``target_distance_per_step`` and ``z_center`` are tuned to this
+    # unit, so the controller keeps the raw value rather than converting to
+    # metres — same as the C++ env. Real-hardware mocap publishes 2.5x
+    # larger values; the controller divides by 2.5 in non-sim mode to match.
     position_x: float = 0.0
     position_y: float = 0.0
     position_z: float = 0.0

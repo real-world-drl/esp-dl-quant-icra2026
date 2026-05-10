@@ -29,8 +29,8 @@ drl_quant/                     Python package
     onnx_dynamic_quantize/     step 3: ONNX -> dynamic-quantized ONNX
     espdl_quantize/            step 4: ONNX -> ESP-DL .espdl
     inference/                 evaluation Player + runners + preprocessors
-quaid_env/                     standalone gymnasium env (own pyproject.toml,
-                               separate install — see quaid_env/README.md)
+quaid-env/                     standalone gymnasium env (own pyproject.toml,
+                               separate install — see quaid-env/README.md)
 scripts/                       end-to-end runner
 ```
 
@@ -131,7 +131,7 @@ python -m drl_quant.data_generation.extract_observations \
 
 `.pt` files are gitignored — regenerate them on first run.
 
-### Step 2 — ONNX export (three variants)
+### Step 2 — ONNX export
 
 Pick the one that matches the actor:
 
@@ -152,6 +152,12 @@ python -m drl_quant.onnx_export.export_native_gru_actor \
     -i models/QuaidSIM-v4/cpp/act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.dat \
     -s data/QuaidSIM-v4/observations_RA-TD3_2025-09-08T22-45-15.csv \
     -g models/rnn/rnn_Quaid_RA-64.dat
+
+# GRU-only Aug-GRU export (no actor head — language-model preprocessing,
+# generic sequence encoders, or composing with an external actor head)
+python -m drl_quant.onnx_export.export_aug_gru \
+    -i models/rnn/rnn_Quaid_RA-64.dat \
+    -n 25                                # GRU input dim: 17 for R-, 25 for RA-
 ```
 
 ### Step 3 — dynamic ONNX quantization (host-side benchmark)
@@ -203,15 +209,27 @@ observation-preprocessor are auto-detected from the model filename (TD3 /
 SAC / R-/RA-/A- variants, TorchScript or ONNX, Aug-GRU baked in or external).
 
 ```bash
-pip install -e quaid_env/
+pip install -e quaid-env/
+
+# Sim eval — uses queue 100 from quaid-icra-sim.yaml
 python -m drl_quant.inference \
     --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \
-    --env-config quaid_env/examples/quaid-icra-sim.yaml \
+    --env-config quaid-env/examples/quaid-icra-sim.yaml \
     --episodes 5 --output-dir runs/eval-1
+
+# Real robot — pin to its dedicated queue with -q so it can't be hit
+# accidentally by a sim eval
+python -m drl_quant.inference \
+    --model ... \
+    --env-config quaid-env/examples/quaid-icra-real.yaml \
+    -q 99
 ```
 
-See `drl_quant/inference/README.md` for the full dispatch table and the
-list of supported model formats.
+The `-q` flag overrides `mqtt_queue_no` from the YAML — the project
+convention is **real = 99, sim = 100+, training jobs use disjoint
+ranges** so the broker never cross-delivers between roles. See
+`drl_quant/inference/README.md` for the dispatch table, supported model
+formats, and the full queue convention.
 
 ## Naming conventions (load-bearing)
 

@@ -6,7 +6,7 @@ all you need is::
 
     python -m drl_quant.inference \\
         --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \\
-        --env-config quaid_env/examples/quaid-icra-sim.yaml \\
+        --env-config quaid-env/examples/quaid-icra-sim.yaml \\
         --episodes 5
 
 The runner + preprocessor are auto-detected from the model filename; pass
@@ -28,7 +28,11 @@ def get_args(argv=None) -> argparse.Namespace:
     parser.add_argument('-m', '--model', required=True,
                         help='Path to the actor model (.onnx / .pt / .dat).')
     parser.add_argument('-c', '--env-config', required=True,
-                        help='YAML config for QuaidEnv (e.g. quaid_env/examples/quaid-icra-sim.yaml).')
+                        help='YAML config for QuaidEnv (e.g. quaid-env/examples/quaid-icra-sim.yaml).')
+    parser.add_argument('-q', '--mqtt-queue',
+                        help='Override mqtt_queue_no from the YAML (used in MQTT topic '
+                             'strings: quaid/obs/r{q}BIN, quaid/act/r{q}, etc.). Matches '
+                             'the sim-to-real-cpp player -q flag.')
     parser.add_argument('-g', '--gru-path',
                         help='Sibling GRU file for recurrent actors that do NOT bake the GRU in. '
                              '(.dat / .pt / .onnx). Ignored for aug_*/with_gru_* ONNXes.')
@@ -61,16 +65,41 @@ def main(argv=None) -> int:
     # even if quaid_env isn't installed.
     try:
         from quaid_env import QuaidEnv, load_settings
-    except ImportError:
+    except ImportError as e:
+        # Surface the actual error rather than blanket-blaming quaid_env —
+        # a missing transitive dep (gymnasium / pyyaml / paho-mqtt) raises
+        # ImportError too and would otherwise be misreported as "package
+        # missing".
+        sys.stderr.write(f'ERROR: failed to import quaid_env: {e}\n\n')
+        missing = getattr(e, 'name', '') or ''
+        if missing in ('quaid_env', ''):
+            sys.stderr.write(
+                'The quaid_env package itself is not importable. Install it '
+                'from the sibling directory:\n'
+                '   pip install -e quaid-env/\n'
+            )
+        else:
+            sys.stderr.write(
+                f'quaid_env is installed but its dependency {missing!r} is not. '
+                'Re-install quaid_env so pip pulls its deps:\n'
+                '   pip install -e quaid-env/\n'
+            )
         sys.stderr.write(
-            'ERROR: quaid_env not installed. Install it from the sibling package:\n'
-            '   pip install -e quaid_env/\n',
+            '\nIf you have multiple Python envs (e.g. conda + venv), confirm '
+            'you are running from the one where you installed it:\n'
+            '   which python\n'
+            '   python -c "import quaid_env; print(quaid_env.__file__)"\n'
         )
         return 2
 
     from drl_quant.inference.player import Player
 
     settings = load_settings(args.env_config)
+    if args.mqtt_queue is not None:
+        # Coerce to str — the YAML loader already does this for the loaded
+        # value; we mirror it so a CLI int (e.g. -q 100) goes through the
+        # same code path.
+        settings.ports.mqtt_queue_no = str(args.mqtt_queue)
     env = QuaidEnv(settings)
     env.connect()
 

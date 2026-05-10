@@ -134,21 +134,25 @@ class MqttController:
 
     def _handle_mocap(self, payload: bytes) -> None:
         pkt = decode_mocap(payload)
-        # Mocap positions are int16 millimetres; convert to metres. The C++
-        # controller scales by an additional 1/2.5 on real hardware
-        # (sim==False) but we leave that to the YAML by treating sim and real
-        # the same here; if a real-world deployment needs that scaling, add
-        # it via a config flag.
-        x_m = pkt.x / 1000.0
-        y_m = pkt.y / 1000.0
-        z_m = pkt.z / 1000.0
+        # The simulator publishes int16 positions in **decimetres** (0.1 m) —
+        # quaid-sim-cpp/src/mqtt_controller.cpp:235 casts ``sensordata * 10``
+        # to int16, where ``sensordata`` is MuJoCo's mocap site in metres. The
+        # YAML's ``target_distance_per_step`` and ``z_center`` are tuned for
+        # this dm unit, so we keep the raw value rather than converting to
+        # metres. Real-hardware mocap publishes 2.5x larger values that need
+        # /2.5 to match the simulator's scale — same as
+        # QuaidControllerMqtt.cpp:217-222.
+        scale = 1.0 if self.settings.robot.sim else 2.5
+        x = pkt.x / scale
+        y = pkt.y / scale
+        z = pkt.z / scale
 
         with self.data.with_lock() as data:
-            data.position_x = x_m
-            data.position_y = y_m
-            data.position_z = z_m
-            data.no_rotation_x = x_m
-            data.no_rotation_y = y_m
+            data.position_x = x
+            data.position_y = y
+            data.position_z = z
+            data.no_rotation_x = x
+            data.no_rotation_y = y
             data.no_rotation_yaw = pkt.yaw
             # The "rotated" yaw the policy observes is mocap yaw minus the
             # current frame rotation (theta is initially 0).

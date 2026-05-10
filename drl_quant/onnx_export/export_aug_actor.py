@@ -100,14 +100,13 @@ def export(args):
     native_gru.load_state_dict(scripted_gru.state_dict())
     native_gru.eval()
 
-    # Transplant nn.GRU weights into the Aug-GRU.
-    gru_aug = GRUAug(gru_input_size, params['rnn_hidden_size'])
-    gru_aug.l0.x2h.weight = native_gru.rl_gru.weight_ih_l0
-    gru_aug.l0.h2h.weight = native_gru.rl_gru.weight_hh_l0
-    gru_aug.l1.x2h.weight = native_gru.rl_gru.weight_ih_l1
-    gru_aug.l1.h2h.weight = native_gru.rl_gru.weight_hh_l1
-    gru_aug.l2.x2h.weight = native_gru.rl_gru.weight_ih_l2
-    gru_aug.l2.h2h.weight = native_gru.rl_gru.weight_hh_l2
+    # Transplant nn.GRU weights into the Aug-GRU. The Aug-GRU constructor's
+    # layer-count check rejects anything outside 1-3.
+    gru_aug = GRUAug(gru_input_size, params['rnn_hidden_size'], layers=args.num_layers)
+    for i in range(args.num_layers):
+        layer = getattr(gru_aug, f'l{i}')
+        layer.x2h.weight = getattr(native_gru.rl_gru, f'weight_ih_l{i}')
+        layer.h2h.weight = getattr(native_gru.rl_gru, f'weight_hh_l{i}')
 
     if algo == 'TD3':
         aug_actor = AugRTD3Actor(input_size, args.action_size, params)

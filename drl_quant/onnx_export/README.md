@@ -1,7 +1,12 @@
 # `drl_quant.onnx_export` — step 2
 
-TorchScript `.dat` -> ONNX. Three modules because the GRU has to be handled
-three different ways.
+TorchScript `.dat` -> ONNX. Four modules:
+
+* three actor exporters (one per GRU strategy: none / Aug-GRU baked in /
+  native `nn.GRU` baked in);
+* one **GRU-only** exporter for use cases where you don't have an actor
+  head — language-model preprocessing, generic sequence encoders, or
+  composing the quantized GRU with an external actor.
 
 ## Modules
 
@@ -48,6 +53,43 @@ python -m drl_quant.onnx_export.export_native_gru_actor \
     -s data/QuaidSIM-v4/observations_RA-TD3_2025-09-08T22-45-15.csv \
     -g models/rnn/rnn_Quaid_RA-64.dat
 ```
+
+### `export_aug_gru.py` — **GRU-only** (no actor head)
+
+For use cases where you want a quantized GRU on its own — language-model
+preprocessing, generic sequence encoders, or composing the GRU with an
+external actor head. Loads a TorchScript `nn.GRU` checkpoint, transplants
+the weights into a fresh `GRUAug`, and writes a two-input / two-output
+ONNX (`observations` + `h_t_in` -> `features` + `h_t`). Output filename
+follows the `aug_` prefix convention used by the C++ training repo:
+`rnn_<...>.dat` -> `aug_rnn_<...>.onnx`.
+
+```bash
+python -m drl_quant.onnx_export.export_aug_gru \
+    -i models/rnn/rnn_Quaid_RA-64.dat \
+    -n 25                                # GRU input dim: 17 for R-, 25 for RA-
+```
+
+Why Aug-GRU and not the standard ONNX GRU op? Same reason as
+`export_aug_actor` above — ESP-DL's importer cannot handle the standard
+GRU op robustly. The Aug-GRU rebuild uses only the primitives ESP-DL is
+happy with. See `drl_quant/networks/README.md` for the full constraint
+list.
+
+The resulting ONNX feeds straight into:
+
+* **`drl_quant.onnx_dynamic_quantize.quantize`** — host-side int8 benchmark.
+* **`drl_quant.espdl_quantize.quantize_recurrent`** — ESP-DL int8
+  deployment bundle. The same calibration loader works because the input
+  shape (`obs` + `h_t`) is identical to the actor-with-GRU case.
+* **`drl_quant.inference.preprocessors.OnnxGruPreprocessor`** — use the
+  quantized GRU as a feature extractor in front of a separate actor.
+
+`GRUAug` supports 1, 2 or 3 layers — pass `--num_layers` (default 3) to
+match your trained checkpoint. 1 covers language-model / sequence-encoder
+use cases; 2-3 cover the QuaidSIM-v4 trained policies. The exporter
+delegates the depth check to `GRUAug`'s constructor, so unsupported counts
+(e.g. 4) fail before any file IO with a clear error.
 
 ## Inputs picked from the filename
 

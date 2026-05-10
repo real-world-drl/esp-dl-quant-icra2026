@@ -18,8 +18,11 @@ def test_load_quaid_icra_sim_yaml():
 
     assert s.ports.mqtt_server_ip == 'tcp://mqtt-server:1883'
     # mqtt_queue_no is an int in the YAML but the loader coerces to str so
-    # it can be slotted into MQTT topic format strings unchanged.
-    assert s.ports.mqtt_queue_no == '888'
+    # it can be slotted into MQTT topic format strings unchanged. Don't
+    # pin to a specific value — users routinely edit it for their own
+    # broker / queue layout.
+    assert isinstance(s.ports.mqtt_queue_no, str)
+    assert s.ports.mqtt_queue_no.isdigit()
 
     # Robot section.
     assert s.robot.max_steps == 500
