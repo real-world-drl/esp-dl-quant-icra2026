@@ -58,6 +58,7 @@ data/**/*.pt
 
 # Local SQLite / log output from drl_quant.inference.mqtt_inference.
 data/logger/
+data/snapshots
 
 # Direnv / dotenv
 .env
