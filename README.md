@@ -68,6 +68,15 @@ binary channel. Don't stack a `venv` inside a conda env; pick one.
 PPQ ships with C extensions; on a fresh box you may need
 ``pip install --upgrade pip setuptools wheel`` first.
 
+If you're on **torch >= 2.5** and the export step fails with
+`ModuleNotFoundError: No module named 'onnxscript'`, an
+``AttributeError: 'LeafSpec' object has no attribute 'type'``, or a
+"requires opset >= 18" message, see
+``drl_quant/onnx_export/README.md`` — the exporters force the legacy
+TorchScript path via ``dynamo=False`` and need ``onnxscript`` even though
+they don't use the dynamo path themselves. Both fixes are already in
+``pyproject.toml`` for fresh installs.
+
 ### GPU (optional)
 
 `pip install torch` from the default PyPI index installs the **CPU-only**

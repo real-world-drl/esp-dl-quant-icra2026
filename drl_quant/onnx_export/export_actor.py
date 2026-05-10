@@ -23,6 +23,7 @@ import torch
 
 from drl_quant.networks.sac import DiagGaussianActor
 from drl_quant.networks.td3 import TD3Actor
+from drl_quant.onnx_export._export_compat import LEGACY_EXPORT_KWARGS
 from drl_quant.onnx_export._naming import detect_algorithm
 
 
@@ -70,10 +71,11 @@ def export(args):
         output_model_path,
         verbose=True,
         export_params=True,
-        opset_version=15,
+        opset_version=18,
         do_constant_folding=True,
         input_names=['observations'],
         output_names=['action'],
+        **LEGACY_EXPORT_KWARGS,
     )
     print(f'Exported {output_model_path}')
     return output_model_path

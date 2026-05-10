@@ -53,8 +53,38 @@ python -m drl_quant.onnx_export.export_native_gru_actor \
 
 All three exporters branch on substrings in the input path:
 
-- `TD3` -> use `TD3Actor` head, otherwise `DiagGaussianActor` (SAC head)
+- `TD3` or `SAC` (required) -> selects `TD3Actor` (Tanh, action_dim outputs)
+  vs `DiagGaussianActor` (Gaussian, action_dim*2 outputs). Filenames
+  missing both tags raise a `ValueError` with examples — the heads are not
+  interchangeable, so silent fallback would crash later inside
+  `load_state_dict`.
 - `RA-` -> add 8 (action-size) to the GRU input dimension; observation
-  size becomes 25 instead of 17
+  size becomes 25 instead of 17.
 
 Keep these conventions in any new checkpoint filenames.
+
+## torch >= 2.5 notes
+
+These exporters target the legacy TorchScript-based `torch.onnx.export`
+path (the one that traces `nn.Module`s and emits a static graph). Since
+torch 2.5 there's also a new dynamo-based exporter, and torch 2.6+ has
+been gradually shifting `torch.onnx.export` toward it. The dynamo path:
+
+* fails with `AttributeError: 'LeafSpec' object has no attribute 'type'`
+  on the `Aug*Actor` graph shapes;
+* refuses any `opset_version` below 18.
+
+To stay on the legacy path, every `torch.onnx.export(...)` call here
+spreads `**LEGACY_EXPORT_KWARGS` from `_export_compat.py`, which evaluates
+to `{'dynamo': False}` on torch >= 2.5 and `{}` on older torches (where
+the parameter doesn't exist). If a future torch removes the legacy
+exporter entirely, this is the one place to update.
+
+Required deps for the new-torch path:
+
+```bash
+pip install onnxscript    # torch >= 2.5 imports it even on the legacy path
+```
+
+`onnxscript` is now a declared dependency in `pyproject.toml` so a fresh
+`pip install -e .` picks it up automatically.

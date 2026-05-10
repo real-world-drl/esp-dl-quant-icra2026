@@ -33,6 +33,7 @@ from drl_quant.networks.augmented_gru import GRUAug
 from drl_quant.networks.rnn import GruNet
 from drl_quant.networks.sac import AugRSACActor, DiagGaussianActor
 from drl_quant.networks.td3 import AugRTD3Actor, TD3Actor
+from drl_quant.onnx_export._export_compat import LEGACY_EXPORT_KWARGS
 from drl_quant.onnx_export._naming import detect_algorithm
 
 
@@ -129,10 +130,11 @@ def export(args):
             args.output_model,
             verbose=True,
             export_params=True,
-            opset_version=17,
+            opset_version=18,
             do_constant_folding=True,
             input_names=['observations', 'h_t_in'],
             output_names=['action', 'h_t'],
+            **LEGACY_EXPORT_KWARGS,
         )
     print(f'Exported {args.output_model}')
     return args.output_model
