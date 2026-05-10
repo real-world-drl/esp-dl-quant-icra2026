@@ -1,8 +1,8 @@
 """Command-line entry: ``python -m drl_quant.inference``.
 
-Loads a quantised actor against the QuaidEnv (over MQTT) and runs N evaluation
-episodes, printing per-episode and aggregate statistics. For most use cases
-all you need is::
+Loads a quantised actor against the QuaidEnv (over MQTT) and runs N
+evaluation episodes, printing per-episode and aggregate statistics. For
+most use cases all you need is::
 
     python -m drl_quant.inference \\
         --model models/QuaidSIM-v4/onnx/aug_act_net_QuaidSIM-v4_RA-TD3_+439.031_450000.onnx \\
@@ -11,13 +11,30 @@ all you need is::
 
 The runner + preprocessor are auto-detected from the model filename; pass
 ``--runner`` / ``--preprocessor`` to force a particular combination.
+
+## Run output
+
+Each invocation creates a timestamped subdirectory matching the C++
+``HyperParams::init_snapshot_dir`` convention::
+
+    <output-root>/<env-name>/<policy-name>/<YYYY-MM-DDTHH-MM-SS>/
+        Quaid_<timestamp>.sqlite       # observations / actions / rewards / theta_updates
+        inference_times.db             # per-step μs + per-episode summary
+
+``--output-root`` defaults to ``data/snapshots`` (matches the C++ default).
+``--env-name`` and ``--policy-name`` are auto-detected from the model
+filename when not supplied: ``aug_act_net_QuaidSIM-v4_RA-TD3_*.onnx`` ->
+env=``QuaidSIM-v4``, policy=``A-TD3``.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
+import time
+from pathlib import Path
 
 
 def get_args(argv=None) -> argparse.Namespace:
@@ -46,12 +63,71 @@ def get_args(argv=None) -> argparse.Namespace:
                         help='Override runner auto-detection.')
     parser.add_argument('--preprocessor', choices=['none', 'add_actions', 'gru', 'onnx_gru'],
                         help='Override preprocessor auto-detection.')
-    parser.add_argument('--output-dir',
-                        help='Directory for SQLite inference-time log + summary.')
+    parser.add_argument('--output-root', default='data/snapshots',
+                        help='Parent directory for the per-run timestamped folder. '
+                             'Default matches the C++ HyperParams::snapshot_dir convention.')
+    parser.add_argument('--env-name', default=None,
+                        help='Used as the second-level folder name. Defaults to the env '
+                             'name parsed from the model filename (e.g. QuaidSIM-v4).')
+    parser.add_argument('--policy-name', default=None,
+                        help='Used as the third-level folder name. Defaults to the policy '
+                             'parsed from the model filename: TD3 / SAC for non-recurrent, '
+                             'R-/RA- for external-GRU TorchScript, A- for Aug-GRU ONNX.')
+    parser.add_argument('--no-logger', action='store_true',
+                        help='Disable per-step SQLite logging (matches C++ env_logger=false). '
+                             'Inference timing summary still prints to stdout.')
     parser.add_argument('--device', default='cpu',
                         help='Torch device for TorchScript paths.')
     parser.add_argument('-v', '--verbose', action='store_true')
     return parser.parse_args(argv)
+
+
+def detect_env_name(model_path: str) -> str:
+    """Pull the env identifier out of a model filename.
+
+    ``act_net_QuaidSIM-v4_TD3_+225.dat`` -> ``QuaidSIM-v4``.
+    ``aug_act_net_QuaidSIM-v4_RA-TD3_+...onnx`` -> ``QuaidSIM-v4``.
+    Falls back to ``unknown`` if the filename doesn't follow the convention.
+    """
+    name = Path(model_path).name
+    m = re.search(r'(?:aug_|with_gru_|with_rnn_)?act_net_([^_]+)_', name)
+    return m.group(1) if m else 'unknown'
+
+
+def detect_policy_name(model_path: str) -> str:
+    """Pull the policy tag out of a model filename, matching the C++
+    ``-p`` flag convention used in scripts/exports_icra.sh.
+
+    * ``aug_act_net_*_RA-TD3_*`` / ``with_gru_act_net_*_RA-SAC_*`` ->
+      ``A-TD3`` / ``A-SAC`` — Aug-GRU is baked in, prepended actions
+      handled by the AddActionsPreprocessor; the C++ player calls these
+      ``A-`` regardless of whether the source was R- or RA-.
+    * ``act_net_*_RA-TD3_*`` -> ``RA-TD3`` (recurrent, external GRU).
+    * ``act_net_*_R-TD3_*``  -> ``R-TD3``  (recurrent, no actions).
+    * ``act_net_*_TD3_*``    -> ``TD3``    (non-recurrent).
+    """
+    from drl_quant.inference.player import detect_policy_variant
+    info = detect_policy_variant(model_path)
+    algo = info['algorithm'] or 'unknown'
+    if info['has_gru_inside']:
+        return f'A-{algo}'
+    if info['is_recurrent']:
+        prefix = 'RA-' if info['actions_to_rnn'] else 'R-'
+        return f'{prefix}{algo}'
+    return algo
+
+
+def build_run_dir(output_root: str, env_name: str, policy_name: str,
+                  timestamp: str | None = None) -> Path:
+    """Build ``<root>/<env>/<policy>/<timestamp>/`` and ensure it exists.
+
+    Mirrors HyperParams::init_snapshot_dir from the C++ project.
+    """
+    if timestamp is None:
+        timestamp = time.strftime('%Y-%m-%dT%H-%M-%S')
+    run_dir = Path(output_root) / env_name / policy_name / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
 
 
 def main(argv=None) -> int:
@@ -66,10 +142,6 @@ def main(argv=None) -> int:
     try:
         from quaid_env import QuaidEnv, load_settings
     except ImportError as e:
-        # Surface the actual error rather than blanket-blaming quaid_env —
-        # a missing transitive dep (gymnasium / pyyaml / paho-mqtt) raises
-        # ImportError too and would otherwise be misreported as "package
-        # missing".
         sys.stderr.write(f'ERROR: failed to import quaid_env: {e}\n\n')
         missing = getattr(e, 'name', '') or ''
         if missing in ('quaid_env', ''):
@@ -94,6 +166,13 @@ def main(argv=None) -> int:
 
     from drl_quant.inference.player import Player
 
+    # Per-run output folder (matches C++ snapshot_dir convention).
+    env_name = args.env_name or detect_env_name(args.model)
+    policy_name = args.policy_name or detect_policy_name(args.model)
+    timestamp = time.strftime('%Y-%m-%dT%H-%M-%S')
+    run_dir = build_run_dir(args.output_root, env_name, policy_name, timestamp)
+    print(f'Run output: {run_dir}')
+
     settings = load_settings(args.env_config)
     if args.mqtt_queue is not None:
         # Coerce to str — the YAML loader already does this for the loaded
@@ -103,6 +182,9 @@ def main(argv=None) -> int:
     env = QuaidEnv(settings)
     env.connect()
 
+    if not args.no_logger:
+        env.setup_logger(run_dir / f'Quaid_{timestamp}.sqlite')
+
     player = Player(
         env,
         args.model,
@@ -111,7 +193,7 @@ def main(argv=None) -> int:
         rnn_hidden_size=args.rnn_hidden_size,
         runner_kind=args.runner,
         preprocessor_kind=args.preprocessor,
-        output_dir=args.output_dir,
+        output_dir=str(run_dir),
         test_episodes=args.episodes,
         max_test_steps=args.max_steps,
         test_step_delay_ms=args.step_delay_ms,

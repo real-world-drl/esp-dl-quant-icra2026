@@ -132,24 +132,75 @@ env.close()
 print(stats.summary()['mean_inference_us'])
 ```
 
+## Run output — timestamped folder per invocation
+
+Each invocation creates ``<output-root>/<env-name>/<policy-name>/<timestamp>/``,
+matching the C++ ``HyperParams::init_snapshot_dir`` convention:
+
+```
+data/snapshots/                                 # --output-root, default
+└── QuaidSIM-v4/                                # --env-name (auto from filename)
+    └── A-TD3/                                  # --policy-name (auto from filename)
+        └── 2026-05-10T15-32-28/                # ISO-style timestamp
+            ├── Quaid_2026-05-10T15-32-28.sqlite   # 4-table per-step log
+            └── inference_times.db                 # μs / episode summary
+```
+
+Auto-detection from the model filename (override with ``--env-name`` /
+``--policy-name``):
+
+| Filename                                    | env-name      | policy-name |
+|---------------------------------------------|---------------|-------------|
+| ``act_net_QuaidSIM-v4_TD3_*.dat``           | QuaidSIM-v4   | TD3         |
+| ``act_net_QuaidSIM-v4_RA-TD3_*.dat``        | QuaidSIM-v4   | RA-TD3      |
+| ``aug_act_net_QuaidSIM-v4_RA-TD3_*.onnx``   | QuaidSIM-v4   | A-TD3       |
+| ``with_gru_act_net_QuaidSIM-v4_RA-SAC_*.onnx`` | QuaidSIM-v4 | A-SAC       |
+
+Pass ``--no-logger`` to disable the per-step SQLite log (the inference
+timing summary still prints to stdout).
+
 ## Statistics
 
-Per episode:
-- reward, step count, wall seconds, FPS
-- mean / stdev inference time (microseconds)
+### Per-step (`Quaid_<timestamp>.sqlite`)
 
-Aggregate:
-- mean ± stdev reward, mean steps
-- inference: mean / stdev / min / max / p50 / p95 / p99 (μs)
+Schema mirrors the C++ ``QuaidLogging.cpp`` 1:1 — 4 tables, all keyed by
+``(episode_no, step)``:
 
-If ``--output-dir`` is set, the run also writes
-``<output-dir>/inference_times.db`` with two SQLite tables matching the C++
-``Trainer::log_inference_times`` schema:
+```sql
+-- full sensor + mocap state per step
+CREATE TABLE observations (id PK, episode_no, step, time, time_delta,
+    distance, voltage, current, yaw_delta, yaw_mean, yaw, pitch, roll,
+    obs_age, servo0..7, current_front_left/right, current_back_left/right,
+    acc_x/y/z, gyro_x/y/z, position_x/y/z, theta, done);
+
+-- 8-dim policy action per step
+CREATE TABLE actions (id PK, episode_no, step, time, servo0..7);
+
+-- reward breakdown per step (every term + total)
+CREATE TABLE rewards (id PK, episode_no, step, time, reward, speed,
+    distance, yaw_delta, yaw, pitch, roll, z_position,
+    current_front_left/right, current_back_left/right, current,
+    acc_z, acc_x, acc_y, action_smoothness);
+
+-- frame-rotation events (only fires when adjust_theta runs)
+CREATE TABLE theta_updates (id PK, episode_no, step, time,
+    current_theta, yaw, yaw_mean, random, new_theta);
+```
+
+The Python and C++ implementations buffer per episode and flush in a
+single transaction on `done`, so episode-end is atomic — partial episodes
+never appear in the DB. Same analysis tooling can read either side.
+
+### Per-run summary (`inference_times.db`)
 
 ```sql
 CREATE TABLE inference_times (id PK, episode_no, step, inference_time_us);
 CREATE TABLE episodes        (id PK, episode_no, reward, steps, wall_seconds);
 ```
+
+Aggregates printed to stdout at the end:
+- mean ± stdev reward, mean steps
+- inference: mean / stdev / min / max / p50 / p95 / p99 (μs)
 
 ## What's intentionally skipped
 
