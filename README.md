@@ -5,8 +5,9 @@ networks into [ESP-DL](https://github.com/espressif/esp-dl) `.espdl` models
 for on-device inference on ESP32-S3 / ESP32-P4. Submitted alongside the ICRA
 2026 paper *Quantization of DRL Models for Embedded Microcontrollers* as one
 of three companion repositories; the paper itself and the experimental
-methodology live in the main repo. This repo is the model side: TorchScript
-in, `.espdl` out.
+methodology live in the main repo
+([real-world-drl/quant-drl](https://github.com/real-world-drl/quant-drl)).
+This repo is the model side: TorchScript in, `.espdl` out.
 
 The shipped pipeline targets the **QuaidSIM-v4** environment and includes the
 six trained TorchScript actors (TD3, SAC, RA-TD3, RA-SAC) plus the calibration
